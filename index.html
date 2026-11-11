@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <title>My Tasks</title>
+
+  <!-- 테마 깜빡임 방지: CSS 적용 전에 저장된 테마(없으면 OS 설정)를 반영 -->
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('todoTheme');
+        if (t !== 'dark' && t !== 'light') {
+          t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', t);
+      } catch (e) { /* 기본(라이트) 테마 사용 */ }
+    })();
+  </script>
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <a class="skip-link" href="#todo-input">할 일 입력으로 건너뛰기</a>
+
+  <!--
+    데스크톱 레이아웃 (≥ 960px): [사이드바 | 할 일 목록 | 진행 현황] 3단
+    좁은 화면에서는 세 영역이 display: contents 로 풀려 모바일용 1단 카드 레이아웃이 된다.
+    script.js는 루트 버전과 동일하며 id/class 이름도 모두 같다.
+  -->
+  <div class="app" id="app">
+    <!-- ===== 왼쪽: 브랜드 + 필터 + 정렬 + 데이터 관리 ===== -->
+    <div class="sidebar">
+      <header class="app-header">
+        <div class="title-wrap">
+          <h1 class="app-title">My Tasks</h1>
+          <span class="badge" id="remaining-badge" title="남은 할 일">
+            <span class="sr-only">남은 할 일</span>
+            <span id="remaining-count">0</span>
+            <span class="sr-only">개</span>
+          </span>
+        </div>
+      </header>
+
+      <div class="side-section side-filters">
+        <h2 class="side-heading">카테고리</h2>
+        <nav class="filters" id="filters" aria-label="카테고리 필터">
+          <button type="button" class="filter-btn" data-filter="all" aria-keyshortcuts="Alt+1">
+            <span class="filter-label">전체</span><span class="filter-count" aria-hidden="true">0</span>
+          </button>
+          <button type="button" class="filter-btn" data-filter="work" aria-keyshortcuts="Alt+2">
+            <span class="filter-label">업무</span><span class="filter-count" aria-hidden="true">0</span>
+          </button>
+          <button type="button" class="filter-btn" data-filter="personal" aria-keyshortcuts="Alt+3">
+            <span class="filter-label">개인</span><span class="filter-count" aria-hidden="true">0</span>
+          </button>
+          <button type="button" class="filter-btn" data-filter="study" aria-keyshortcuts="Alt+4">
+            <span class="filter-label">공부</span><span class="filter-count" aria-hidden="true">0</span>
+          </button>
+        </nav>
+      </div>
+
+      <div class="side-section side-sort">
+        <h2 class="side-heading"><label for="sort-select">정렬</label></h2>
+        <select id="sort-select" class="sort-select">
+          <option value="status">완료 상태순</option>
+          <option value="created">생성일순 (최신)</option>
+          <option value="category">카테고리순</option>
+          <option value="manual">직접 정렬 (드래그)</option>
+        </select>
+      </div>
+
+      <div class="list-actions">
+        <button type="button" class="btn btn-ghost kw-open-btn" id="keyword-settings-btn" title="자동 분류 키워드 설정" aria-haspopup="dialog">⚙ 키워드 설정</button>
+        <button type="button" class="btn btn-danger-ghost" id="clear-completed" disabled>
+          완료 항목 삭제 <span id="completed-count">(0)</span>
+        </button>
+        <div class="data-actions">
+          <button type="button" class="btn btn-ghost" id="export-btn" title="JSON 파일로 저장">내보내기</button>
+          <button type="button" class="btn btn-ghost" id="import-btn" title="JSON 파일 불러오기">가져오기</button>
+          <input type="file" id="import-file" accept=".json,application/json" hidden />
+        </div>
+      </div>
+
+      <details class="shortcuts">
+        <summary>키보드 단축키 · 사용법</summary>
+        <dl>
+          <dt><kbd>Alt</kbd>+<kbd>N</kbd></dt><dd>새 할 일 입력</dd>
+          <dt><kbd>Alt</kbd>+<kbd>1</kbd>~<kbd>4</kbd></dt><dd>필터 전환</dd>
+          <dt><kbd>Alt</kbd>+<kbd>D</kbd></dt><dd>다크 모드</dd>
+          <dt><kbd>/</kbd></dt><dd>검색</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>Z</kbd></dt><dd>되돌리기</dd>
+          <dt><kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd></dt><dd>순서 이동</dd>
+          <dt>더블클릭 / ✎</dt><dd>수정 (<kbd>Enter</kbd>/<kbd>Esc</kbd>)</dd>
+        </dl>
+      </details>
+    </div>
+
+    <!-- ===== 가운데: 검색 + 입력 + 목록 ===== -->
+    <main class="main" id="main">
+      <div class="main-head">
+        <div class="topbar">
+          <div class="search">
+            <label for="search-input" class="sr-only">할 일 검색</label>
+            <svg class="search-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2" />
+              <line x1="16.5" y1="16.5" x2="21" y2="21" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+            </svg>
+            <input
+              type="search"
+              id="search-input"
+              class="search-input"
+              placeholder="할 일 검색 ( / )"
+              autocomplete="off"
+              aria-keyshortcuts="/"
+            />
+            <button type="button" class="search-clear" id="search-clear" aria-label="검색어 지우기" hidden>×</button>
+          </div>
+
+          <button
+            type="button"
+            class="theme-switch"
+            id="theme-toggle"
+            role="switch"
+            aria-checked="false"
+            aria-label="다크 모드"
+            aria-keyshortcuts="Alt+D"
+            title="다크 모드 전환 (Alt+D)"
+          >
+            <span class="theme-switch-track" aria-hidden="true">
+              <span class="theme-switch-thumb">
+                <span class="icon-sun">☀</span>
+                <span class="icon-moon">☾</span>
+              </span>
+            </span>
+          </button>
+        </div>
+
+        <form class="todo-form" id="todo-form" novalidate>
+          <select id="category-select" class="category-select" aria-label="새 할 일 카테고리">
+            <option value="work">업무</option>
+            <option value="personal">개인</option>
+            <option value="study">공부</option>
+          </select>
+          <input
+            type="text"
+            id="todo-input"
+            class="todo-input"
+            placeholder="할 일을 입력하세요 (Alt+N)"
+            autocomplete="off"
+            maxlength="200"
+            aria-label="새 할 일"
+            aria-keyshortcuts="Alt+N"
+          />
+          <button type="submit" class="add-btn">추가</button>
+        </form>
+        <p class="auto-category" id="auto-category" aria-live="polite"></p>
+      </div>
+
+      <ul class="todo-list" id="todo-list" aria-label="할 일 목록"></ul>
+      <p class="empty-message" id="empty-message" hidden></p>
+    </main>
+
+    <!-- ===== 오른쪽: 격언 + 진행률 대시보드 ===== -->
+    <div class="insights">
+      <figure class="quote" id="quote" aria-label="오늘의 격언">
+        <span class="quote-label" aria-hidden="true">오늘의 격언</span>
+        <blockquote class="quote-text" id="quote-text"></blockquote>
+        <figcaption class="quote-author" id="quote-author"></figcaption>
+        <button type="button" class="icon-btn quote-refresh" id="quote-refresh" aria-label="다른 격언 보기" title="다른 격언 보기">↻</button>
+      </figure>
+
+      <section class="stats" aria-labelledby="stats-title">
+        <h2 id="stats-title" class="side-heading">진행 현황</h2>
+
+        <div class="stats-header">
+          <span class="stats-label">전체 진행률</span>
+          <span class="stats-value" id="overall-text">0/0 완료 (0%)</span>
+        </div>
+        <div
+          class="progress"
+          id="overall-progress"
+          role="progressbar"
+          aria-label="전체 진행률"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="0"
+        >
+          <div class="progress-bar" id="overall-bar"></div>
+        </div>
+        <p class="cheer" id="cheer-message"></p>
+
+        <div class="stats-categories">
+          <div class="mini-stat" data-category="work">
+            <div class="mini-header">
+              <span class="mini-name">업무</span>
+              <span class="mini-count">0/0</span>
+            </div>
+            <div class="progress progress-sm" role="progressbar" aria-label="업무 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <div class="progress-bar"></div>
+            </div>
+          </div>
+          <div class="mini-stat" data-category="personal">
+            <div class="mini-header">
+              <span class="mini-name">개인</span>
+              <span class="mini-count">0/0</span>
+            </div>
+            <div class="progress progress-sm" role="progressbar" aria-label="개인 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <div class="progress-bar"></div>
+            </div>
+          </div>
+          <div class="mini-stat" data-category="study">
+            <div class="mini-header">
+              <span class="mini-name">공부</span>
+              <span class="mini-count">0/0</span>
+            </div>
+            <div class="progress progress-sm" role="progressbar" aria-label="공부 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <div class="progress-bar"></div>
+            </div>
+          </div>
+        </div>
+
+        <p class="stats-today">오늘 추가된 할 일 <strong id="today-count">0</strong>개</p>
+      </section>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite" aria-relevant="additions"></div>
+  <div class="sr-only" id="sr-live" aria-live="polite" aria-atomic="true"></div>
+
+  <dialog class="dialog" id="dialog" aria-labelledby="dialog-title" aria-describedby="dialog-message">
+    <form method="dialog" class="dialog-form">
+      <h2 class="dialog-title" id="dialog-title"></h2>
+      <p class="dialog-message" id="dialog-message"></p>
+      <div class="dialog-actions" id="dialog-actions"></div>
+    </form>
+  </dialog>
+
+  <!-- 자동 분류 키워드 설정 창 (섹션 내용은 script.js가 그림) -->
+  <dialog class="dialog keyword-dialog" id="keyword-dialog" aria-labelledby="kw-title" aria-describedby="kw-desc">
+    <div class="kw-header">
+      <h2 class="dialog-title" id="kw-title">자동 분류 키워드 설정</h2>
+      <button type="button" class="icon-btn" id="kw-close" aria-label="닫기">×</button>
+    </div>
+    <p class="kw-desc" id="kw-desc">
+      할 일에 아래 키워드가 들어 있으면 해당 카테고리로 자동 선택됩니다.
+      띄어쓰기와 대소문자는 구분하지 않으며, 변경 내용은 바로 저장됩니다.
+    </p>
+
+    <div class="kw-test">
+      <label class="kw-test-label" for="kw-test-input">분류 테스트</label>
+      <input type="text" id="kw-test-input" class="kw-input" placeholder="예: 내일 팀 회의 자료 만들기" autocomplete="off" />
+      <p class="kw-test-result" id="kw-test-result" aria-live="polite"></p>
+    </div>
+
+    <div class="kw-sections" id="kw-sections"></div>
+
+    <p class="kw-status" id="kw-status" role="status" aria-live="polite"></p>
+
+    <div class="dialog-actions kw-footer">
+      <button type="button" class="btn btn-secondary" id="kw-reset">기본값으로 되돌리기</button>
+      <button type="button" class="btn btn-primary" id="kw-done">완료</button>
+    </div>
+  </dialog>
+
+  <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+# 통합 이전 모바일 전용 버전 백업 (배포 대상 아님)
+mobile_backup/
+
+# 출처 불명 빈 파일
+/todolist
+
+# 개인 데이터가 보이는 참고용 스크린샷
+image1.png
+
+# OS / 에디터
+Thumbs.db
+.DS_Store
+.vscode/
